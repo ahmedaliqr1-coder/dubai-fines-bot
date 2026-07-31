@@ -11,15 +11,16 @@ const poolConnection = mysql.createPool({
     rejectUnauthorized: false
   },
   waitForConnections: true,
-  connectionLimit: 10,
-  maxIdle: 10,
-  idleTimeout: 60000,
+  connectionLimit: 5,
+  maxIdle: 5,
+  idleTimeout: 30000,
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 10000,
 });
 
 export const db = drizzle(poolConnection);
+export const getDb = async () => db;
 
 // اختبار الاتصال عند بدء التشغيل
 poolConnection.getConnection()
