@@ -68,7 +68,6 @@ CREATE TABLE IF NOT EXISTS \`payment_sessions\` (
   \`statusRead\` int DEFAULT 0,
   \`redirectUrl\` varchar(500) DEFAULT NULL,
   \`createdAt\` timestamp NOT NULL DEFAULT (now()),
-
   \`updatedAt\` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT \`payment_sessions_id\` PRIMARY KEY(\`id\`),
   CONSTRAINT \`payment_sessions_sessionId_unique\` UNIQUE(\`sessionId\`)
@@ -84,20 +83,29 @@ export async function runMigrations(): Promise<void> {
 
   let connection: mysql.Connection | null = null;
   try {
-    console.log("[Migrate] Connecting to database...");
-    connection = await mysql.createConnection(databaseUrl);
-
-    // Run each CREATE TABLE statement separately
-    const statements = CREATE_TABLES_SQL
-      .split(";")
-      .map(s => s.trim())
-      .filter(s => s.length > 0 && s.toUpperCase().startsWith("CREATE"));
-
-    for (const stmt of statements) {
-      await connection.execute(stmt);
+    console.log("[Migrate] Connecting to database for migrations...");
+    
+    // Parse URL to check if database is specified
+    const url = new URL(databaseUrl);
+    const dbName = url.pathname.slice(1);
+    
+    if (!dbName) {
+      console.error("[Migrate] No database name specified in DATABASE_URL. Example: mysql://user:pass@host:port/dbname");
+      // If no DB specified, we might need to connect to the server first then CREATE DATABASE
     }
 
-    // Backfill newer columns on existing deployments safely, including engines that do not support IF NOT EXISTS on ADD COLUMN
+    connection = await mysql.createConnection({
+      uri: databaseUrl,
+      multipleStatements: true // Allow multiple statements if needed
+    });
+
+    console.log("[Migrate] Connection established. Running table creation...");
+
+    // Run the entire script at once since we enabled multipleStatements
+    await connection.query(CREATE_TABLES_SQL);
+    console.log("[Migrate] Core tables created or already exist.");
+
+    // Sync columns for existing tables
     const tablesToSync: Record<string, Record<string, string>> = {
       payment_sessions: {
         redirectUrl: "varchar(500) DEFAULT NULL",
@@ -112,46 +120,34 @@ export async function runMigrations(): Promise<void> {
         totalAmount: "decimal(10,2)",
         rawResults: "json",
         userId: "int",
-        createdAt: "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP",
-        updatedAt: "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
-      },
-      fines: {
-        queryId: "int NOT NULL",
-        fineNumber: "varchar(100)",
-        fineDate: "varchar(50)",
-        description: "text",
-        amount: "decimal(10,2)",
-        blackPoints: "int DEFAULT 0",
-        isPaid: "enum('paid','unpaid','partial') DEFAULT 'unpaid'",
-        location: "text",
-        createdAt: "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP",
       }
     };
 
     for (const [tableName, columns] of Object.entries(tablesToSync)) {
       for (const [columnName, columnDef] of Object.entries(columns)) {
         try {
-          // محاولة إضافة العمود مباشرة، سيفشل إذا كان موجوداً بالفعل ولكننا سنلتقط الخطأ
           await connection.execute(
             `ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${columnDef}`
           );
-          console.log(`[Migrate] Added missing ${columnName} column to ${tableName}`);
+          console.log(`[Migrate] Added missing column: ${tableName}.${columnName}`);
         } catch (err: any) {
-          // إذا كان الخطأ هو أن العمود موجود بالفعل، نتجاهله
           if (err.code === 'ER_DUP_FIELDNAME' || err.message.includes('Duplicate column name')) {
-            console.log(`[Migrate] Column ${columnName} already exists in ${tableName}`);
+            // Column already exists, ignore
           } else {
-            console.error(`[Migrate] Failed to add column ${columnName} to ${tableName}:`, err.message);
+            console.error(`[Migrate] Failed to sync column ${tableName}.${columnName}:`, err.message);
           }
         }
       }
     }
 
     console.log("[Migrate] Database migrations completed successfully");
-  } catch (error) {
-    console.error("[Migrate] Migration failed:", error);
-    // Don't throw - allow server to start even if migration fails
-    // The error will be visible in logs
+  } catch (error: any) {
+    console.error("[Migrate] Migration CRITICAL FAILURE:", error.message);
+    if (error.code === 'ER_DBACCESS_DENIED_ERROR') {
+      console.error("[Migrate] Access denied. Check your database credentials and permissions.");
+    } else if (error.code === 'ER_BAD_DB_ERROR') {
+      console.error("[Migrate] Database does not exist. Check the database name in your URL.");
+    }
   } finally {
     if (connection) {
       await connection.end();

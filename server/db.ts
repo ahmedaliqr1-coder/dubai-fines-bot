@@ -80,8 +80,7 @@ export async function getUserByOpenId(openId: string) {
 export async function createFineQuery(data: InsertFineQuery): Promise<number> {
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Skipping fine query persistence: database not available");
-    return 0;
+    throw new Error("قاعدة البيانات غير متصلة. يرجى التحقق من إعدادات DATABASE_URL");
   }
   
   try {
@@ -164,8 +163,7 @@ export async function getFinesByQueryId(queryId: number): Promise<Fine[]> {
 export async function createPaymentSession(data: InsertPaymentSession): Promise<number> {
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Skipping payment session persistence: database not available");
-    return 0;
+    throw new Error("قاعدة البيانات غير متصلة. لا يمكن إنشاء جلسة دفع.");
   }
   
   try {

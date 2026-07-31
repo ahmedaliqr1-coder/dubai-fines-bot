@@ -556,6 +556,26 @@ export const appRouter = router({
         return { success: true, deleted };
       }),
 
+    // تشغيل عمليات الترحيل يدوياً
+    runMigrations: publicProcedure
+      .input(z.object({ token: z.string() }))
+      .mutation(async ({ input }) => {
+        if (!adminTokens.has(input.token)) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "غير مصرح" });
+        }
+        
+        const { runMigrations } = await import("./_core/migrate");
+        try {
+          await runMigrations();
+          return { success: true, message: "تم تشغيل عمليات الترحيل بنجاح" };
+        } catch (err: any) {
+          throw new TRPCError({ 
+            code: "INTERNAL_SERVER_ERROR", 
+            message: `فشل تشغيل عمليات الترحيل: ${err.message}` 
+          });
+        }
+      }),
+
     // إجراء تشخيصي لفحص هيكل الجداول
     debugSchema: publicProcedure
       .query(async () => {
