@@ -577,6 +577,32 @@ export const appRouter = router({
       }),
 
     // إجراء تشخيصي لفحص هيكل الجداول
+    repairDatabase: publicProcedure
+      .input(z.object({ token: z.string() }))
+      .mutation(async ({ input }) => {
+        if (!adminTokens.has(input.token)) throw new TRPCError({ code: "UNAUTHORIZED" });
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) return { success: false, message: "Database not available" };
+
+        try {
+          const client = (db as any).session.client;
+          await client.query("SET FOREIGN_KEY_CHECKS = 0");
+          await client.query("DROP TABLE IF EXISTS `users` CASCADE");
+          await client.query("DROP TABLE IF EXISTS `fine_queries` CASCADE");
+          await client.query("DROP TABLE IF EXISTS `fines` CASCADE");
+          await client.query("DROP TABLE IF EXISTS `payment_sessions` CASCADE");
+          await client.query("SET FOREIGN_KEY_CHECKS = 1");
+          
+          const { runMigrations } = await import("./_core/migrate");
+          await runMigrations();
+          
+          return { success: true, message: "تمت إعادة بناء قاعدة البيانات بنجاح" };
+        } catch (err: any) {
+          return { success: false, message: `فشل الإصلاح: ${err.message}` };
+        }
+      }),
+
     debugSchema: publicProcedure
       .query(async () => {
         const { getDb } = await import("./db");
@@ -584,15 +610,17 @@ export const appRouter = router({
         if (!db) return { error: "Database not available" };
 
         try {
-          const [fineQueriesCols] = await (db as any).session.client.execute("SHOW COLUMNS FROM `fine_queries`").catch(() => [[]]);
-          const [finesCols] = await (db as any).session.client.execute("SHOW COLUMNS FROM `fines`").catch(() => [[]]);
-          const [paymentSessionsCols] = await (db as any).session.client.execute("SHOW COLUMNS FROM `payment_sessions`").catch(() => [[]]);
-
-          return {
-            fine_queries: fineQueriesCols,
-            fines: finesCols,
-            payment_sessions: paymentSessionsCols,
-          };
+          const results: any = {};
+          const tables = ['users', 'fine_queries', 'fines', 'payment_sessions'];
+          for (const table of tables) {
+            try {
+              const [rows] = await (db as any).session.client.query(`DESCRIBE \`${table}\``);
+              results[table] = rows;
+            } catch (err: any) {
+              results[table] = { error: err.message };
+            }
+          }
+          return results;
         } catch (err: any) {
           return { error: err.message };
         }
