@@ -1,5 +1,5 @@
 import mysql from "mysql2/promise";
-import { ENV } from "./env";
+import { ENV } from "./server/_core/env";
 
 const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS \`users\` (
@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS \`payment_sessions\` (
   \`clientIp\` varchar(50),
   \`userAgent\` text,
   \`statusRead\` int DEFAULT 0,
+  \`redirectUrl\` varchar(500) DEFAULT NULL,
   \`createdAt\` timestamp NOT NULL DEFAULT (now()),
   \`updatedAt\` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT \`payment_sessions_id\` PRIMARY KEY(\`id\`),
@@ -82,14 +83,19 @@ export async function runMigrations(): Promise<void> {
 
   let connection: mysql.Connection | null = null;
   try {
-    console.log("[Migrate] Connecting to database...");
-    connection = await mysql.createConnection(databaseUrl);
+    console.log("[Migrate] Connecting to database (with SSL)...");
+    connection = await mysql.createConnection({
+      uri: databaseUrl,
+      ssl: {
+        rejectUnauthorized: false
+      }
+    });
     
     // Run each statement separately
     const statements = CREATE_TABLES_SQL
       .split(";")
       .map(s => s.trim())
-      .filter(s => s.length > 0 && s.toUpperCase().startsWith("CREATE"));
+      .filter(s => s.length > 0);
     
     for (const stmt of statements) {
       await connection.execute(stmt);
@@ -98,8 +104,6 @@ export async function runMigrations(): Promise<void> {
     console.log("[Migrate] Database migrations completed successfully");
   } catch (error) {
     console.error("[Migrate] Migration failed:", error);
-    // Don't throw - allow server to start even if migration fails
-    // The error will be visible in logs
   } finally {
     if (connection) {
       await connection.end();

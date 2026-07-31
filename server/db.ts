@@ -1,17 +1,28 @@
 import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import { InsertUser, users, fineQueries, fines, paymentSessions, InsertFineQuery, InsertFine, FineQuery, Fine, PaymentSession, InsertPaymentSession } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _connection: mysql.Connection | null = null;
 
 export async function getDb() {
   const databaseUrl = ENV.databaseUrl;
   if (!_db && databaseUrl) {
     try {
-      _db = drizzle(databaseUrl);
+      console.log("[Database] Initializing connection with SSL...");
+      const connection = await mysql.createConnection({
+        uri: databaseUrl,
+        ssl: {
+          rejectUnauthorized: false
+        }
+      });
+      _connection = connection;
+      _db = drizzle(connection);
+      console.log("[Database] Connection initialized successfully");
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.error("[Database] Failed to connect:", error);
       _db = null;
     }
   }
@@ -89,7 +100,6 @@ export async function createFineQuery(data: InsertFineQuery): Promise<number> {
   } catch (error: any) {
     console.error("[Database] Failed to insert fine query, attempting raw fallback:", error);
     
-    // محاولة الإدخال باستخدام SQL خام لتجاوز مشاكل Drizzle إذا استمرت
     try {
       const client = (db as any).session.client;
       const [result] = await client.execute(
@@ -99,7 +109,7 @@ export async function createFineQuery(data: InsertFineQuery): Promise<number> {
       return result.insertId;
     } catch (rawError: any) {
       console.error("[Database] Raw fallback also failed:", rawError);
-      return 0; // Return 0 to indicate DB failure but allow process to continue
+      return 0;
     }
   }
 }
