@@ -1,8 +1,14 @@
 import mysql from "mysql2/promise";
 import { ENV } from "./env";
 
+const DROP_TABLES_SQL = `
+DROP TABLE IF EXISTS \`fines\`;
+DROP TABLE IF EXISTS \`payment_sessions\`;
+DROP TABLE IF EXISTS \`fine_queries\`;
+`;
+
 const CREATE_TABLES_SQL = `
-CREATE TABLE IF NOT EXISTS \`users\` (
+CREATE TABLE \`users\` (
   \`id\` int AUTO_INCREMENT NOT NULL,
   \`openId\` varchar(64) NOT NULL,
   \`name\` text,
@@ -16,7 +22,7 @@ CREATE TABLE IF NOT EXISTS \`users\` (
   CONSTRAINT \`users_openId_unique\` UNIQUE(\`openId\`)
 );
 
-CREATE TABLE IF NOT EXISTS \`fine_queries\` (
+CREATE TABLE \`fine_queries\` (
   \`id\` int AUTO_INCREMENT NOT NULL,
   \`plateSource\` varchar(100) NOT NULL,
   \`plateNumber\` varchar(50) NOT NULL,
@@ -32,7 +38,7 @@ CREATE TABLE IF NOT EXISTS \`fine_queries\` (
   CONSTRAINT \`fine_queries_id\` PRIMARY KEY(\`id\`)
 );
 
-CREATE TABLE IF NOT EXISTS \`fines\` (
+CREATE TABLE \`fines\` (
   \`id\` int AUTO_INCREMENT NOT NULL,
   \`queryId\` int NOT NULL,
   \`fineNumber\` varchar(100),
@@ -46,7 +52,7 @@ CREATE TABLE IF NOT EXISTS \`fines\` (
   CONSTRAINT \`fines_id\` PRIMARY KEY(\`id\`)
 );
 
-CREATE TABLE IF NOT EXISTS \`payment_sessions\` (
+CREATE TABLE \`payment_sessions\` (
   \`id\` int AUTO_INCREMENT NOT NULL,
   \`sessionId\` varchar(64) NOT NULL,
   \`queryId\` int,
@@ -90,34 +96,17 @@ export async function runMigrations(): Promise<void> {
       multipleStatements: true
     });
 
-    console.log("[Migrate] Connection established. Running table creation...");
-
-    // محاولة إنشاء الجداول
+    console.log("[Migrate] Connection established. Dropping old tables to ensure clean state...");
+    
+    // مسح الجداول القديمة تماماً
+    await connection.query(DROP_TABLES_SQL);
+    
+    console.log("[Migrate] Creating new tables with correct schema...");
+    
+    // إنشاء الجداول من جديد
     await connection.query(CREATE_TABLES_SQL);
-    console.log("[Migrate] Core tables created or already exist.");
 
-    // التحقق من الأعمدة المفقودة وإضافتها (لضمان التوافق مع Drizzle)
-    const tablesToSync: Record<string, Record<string, string>> = {
-      payment_sessions: {
-        redirectUrl: "varchar(500) DEFAULT NULL",
-        statusRead: "int DEFAULT 0",
-      }
-    };
-
-    for (const [tableName, columns] of Object.entries(tablesToSync)) {
-      for (const [columnName, columnDef] of Object.entries(columns)) {
-        try {
-          await connection.execute(
-            `ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${columnDef}`
-          );
-          console.log(`[Migrate] Added missing column: ${tableName}.${columnName}`);
-        } catch (err: any) {
-          // تجاهل الخطأ إذا كان العمود موجوداً بالفعل
-        }
-      }
-    }
-
-    console.log("[Migrate] Database migrations completed successfully");
+    console.log("[Migrate] Database rebuilt successfully");
   } catch (error: any) {
     console.error("[Migrate] Migration CRITICAL FAILURE:", error.message);
     throw error;
