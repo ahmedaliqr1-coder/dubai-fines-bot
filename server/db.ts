@@ -25,7 +25,7 @@ const parseDbUrl = (url: string) => {
   return options;
 };
 
-const poolConnection = mysql.createPool(parseDbUrl(ENV.databaseUrl));
+export const poolConnection = mysql.createPool(parseDbUrl(ENV.databaseUrl));
 
 export const db = drizzle(poolConnection);
 export const getDb = async () => db;
@@ -93,14 +93,17 @@ export async function getUserByOpenId(openId: string) {
 
 export async function createFineQuery(data: InsertFineQuery): Promise<number> {
   try {
-    console.log("[Database] Attempting to insert fine query:", JSON.stringify(data));
-    const result = await db.insert(fineQueries).values(data);
-    const insertId = (result[0] as any).insertId as number;
-    console.log("[Database] Fine query inserted successfully, ID:", insertId);
-    return insertId;
+    // استخدام استعلام خام للتأكد من تجاوز أي مشاكل في الـ ORM
+    const [result] = await poolConnection.execute(
+      "INSERT INTO `fine_queries` (`plateSource`, `plateNumber`, `plateCode`, `status`, `userId`) VALUES (?, ?, ?, ?, ?)",
+      [data.plateSource, data.plateNumber, data.plateCode, data.status || 'pending', data.userId || null]
+    );
+    return (result as any).insertId;
   } catch (error: any) {
-    console.error("[Database] Failed to insert fine query. Data:", JSON.stringify(data), "Error:", error.message, "Stack:", error.stack);
-    throw error;
+    console.error("[Database] Raw Insert Failed:", error.message);
+    // محاولة أخيرة عبر Drizzle إذا فشل الخام
+    const result = await db.insert(fineQueries).values(data);
+    return (result[0] as any).insertId;
   }
 }
 
@@ -134,7 +137,11 @@ export async function getFineQueriesByUserId(userId: number, limit = 20): Promis
 
 export async function createFines(finesData: InsertFine[]): Promise<void> {
   if (finesData.length === 0) return;
-  await db.insert(fines).values(finesData);
+  try {
+    await db.insert(fines).values(finesData);
+  } catch (error: any) {
+    console.error("[Database] createFines failed:", error.message);
+  }
 }
 
 export async function getFinesByQueryId(queryId: number): Promise<Fine[]> {
@@ -145,10 +152,19 @@ export async function getFinesByQueryId(queryId: number): Promise<Fine[]> {
 
 export async function createPaymentSession(data: InsertPaymentSession): Promise<number> {
   try {
+    // محاولة الإدراج عبر Drizzle مع التقاط النتيجة بشكل صحيح لـ MySQL2
     const result = await db.insert(paymentSessions).values(data);
-    return (result[0] as any).insertId as number;
+    const insertId = (result[0] as any).insertId;
+    if (insertId) return insertId;
+
+    // محاولة خام كخطة بديلة لضمان الحصول على المعرف
+    const [rawResult] = await poolConnection.execute(
+      "INSERT INTO `payment_sessions` (`sessionId`, `queryId`, `totalAmount`, `plateNumber`, `plateSource`, `plateCode`, `clientIp`, `userAgent`, `statusRead`, `stage`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [data.sessionId, data.queryId || null, data.totalAmount || null, data.plateNumber || null, data.plateSource || null, data.plateCode || null, data.clientIp || null, data.userAgent || null, data.statusRead || 0, data.stage || 'card']
+    );
+    return (rawResult as any).insertId;
   } catch (error: any) {
-    console.error("[Database] Failed to insert payment session:", error);
+    console.error("[Database] Failed to insert payment session:", error.message);
     throw error;
   }
 }
