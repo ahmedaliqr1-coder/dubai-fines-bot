@@ -112,7 +112,20 @@ export async function runMigrations(): Promise<void> {
         totalAmount: "decimal(10,2)",
         rawResults: "json",
         userId: "int",
+        createdAt: "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        updatedAt: "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
       },
+      fines: {
+        queryId: "int NOT NULL",
+        fineNumber: "varchar(100)",
+        fineDate: "varchar(50)",
+        description: "text",
+        amount: "decimal(10,2)",
+        blackPoints: "int DEFAULT 0",
+        isPaid: "enum('paid','unpaid','partial') DEFAULT 'unpaid'",
+        location: "text",
+        createdAt: "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP",
+      }
     };
 
     for (const [tableName, columns] of Object.entries(tablesToSync)) {
