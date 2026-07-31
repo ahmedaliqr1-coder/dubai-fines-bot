@@ -622,10 +622,10 @@ export const appRouter = router({
         try {
           const client = (db as any).session.client;
           await client.query("SET FOREIGN_KEY_CHECKS = 0");
-          await client.query("DROP TABLE IF EXISTS `users` CASCADE");
-          await client.query("DROP TABLE IF EXISTS `fine_queries` CASCADE");
-          await client.query("DROP TABLE IF EXISTS `fines` CASCADE");
-          await client.query("DROP TABLE IF EXISTS `payment_sessions` CASCADE");
+          await client.query("DROP TABLE IF EXISTS `users`");
+          await client.query("DROP TABLE IF EXISTS `fine_queries`");
+          await client.query("DROP TABLE IF EXISTS `fines`");
+          await client.query("DROP TABLE IF EXISTS `payment_sessions`");
           await client.query("SET FOREIGN_KEY_CHECKS = 1");
           
           const { runMigrations } = await import("./_core/migrate");

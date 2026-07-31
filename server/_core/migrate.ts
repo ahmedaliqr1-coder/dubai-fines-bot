@@ -114,15 +114,24 @@ export async function runMigrations(): Promise<void> {
       
 	      // Force clean rebuild if requested or if there are schema issues
 	      // Note: This is a radical fix for the "params mismatch" issue
-	      await connection.query("SET FOREIGN_KEY_CHECKS = 0");
-	      await connection.query("DROP TABLE IF EXISTS `users` CASCADE");
-	      await connection.query("DROP TABLE IF EXISTS `fine_queries` CASCADE");
-	      await connection.query("DROP TABLE IF EXISTS `fines` CASCADE");
-	      await connection.query("DROP TABLE IF EXISTS `payment_sessions` CASCADE");
-	      await connection.query("SET FOREIGN_KEY_CHECKS = 1");
+	      try {
+	        await connection.query("SET FOREIGN_KEY_CHECKS = 0");
+	        await connection.query("DROP TABLE IF EXISTS `users`");
+	        await connection.query("DROP TABLE IF EXISTS `fine_queries`");
+	        await connection.query("DROP TABLE IF EXISTS `fines`");
+	        await connection.query("DROP TABLE IF EXISTS `payment_sessions`");
+	        await connection.query("SET FOREIGN_KEY_CHECKS = 1");
+	      } catch (dropErr) {
+	        console.warn("[Migrate] Drop tables warning:", dropErr);
+	      }
 
 	      for (const statement of statements) {
-	        await connection.query(statement);
+	        try {
+	          await connection.query(statement);
+	        } catch (createErr) {
+	          console.error("[Migrate] Failed to execute statement:", statement.substring(0, 50) + "...", createErr);
+	          throw createErr;
+	        }
 	      }
 
 	      // Ensure all columns exist (manual migration for existing tables)
