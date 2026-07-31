@@ -350,7 +350,7 @@ const API_GET_HEADERS = {
 function normalizeDigits(value: string) {
   return value
     .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
-    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵٦٧٨٩".indexOf(d)));
 }
 
 function normalizeCompare(value: unknown) {
@@ -476,34 +476,17 @@ function getStaticPlateCodeOptions(plateSrcCode: string): PlateCodeOption[] {
 
 function getStaticPlateCodeRecords(plateSrcCode: string): AnyRecord[] {
   const staticCodes = extractCodes(getStaticPlateSourceData(plateSrcCode) as AnyRecord | null);
-  if (staticCodes.length) {
-    return staticCodes.map((code) => {
-      const codeId = extractPlateCodeId(code) ?? 0;
-      const categoryId = extractPlateCategory(code);
-      const label = getPlateCodeDisplayLabel(code) || String(codeId);
-      return {
-        ...code,
-        value: codeId,
-        id: codeId,
-        codeId,
-        plateCodeId: codeId,
-        label: String(code.label ?? label),
-        labelEn: String(code.labelEn ?? code.name ?? code.descriptionEn ?? label),
-        labelAr: String(code.labelAr ?? code.namear ?? code.descriptionAr ?? label),
-        categoryId,
-        plateCat: categoryId,
-      };
-    }).filter((code) => code.codeId > 0);
-  }
+  if (staticCodes.length) return staticCodes;
 
-  return getStaticPlateCodeOptions(plateSrcCode).map((option) => ({
-    value: option.codeId,
-    id: option.codeId,
-    codeId: option.codeId,
-    plateCodeId: option.codeId,
+  if (normalizeCompare(plateSrcCode) !== "DXB") return [];
+
+  return PLATE_CODES.map((option) => ({
+    value: option.value,
+    codeId: Number.parseInt(option.value, 10),
+    plateCodeId: Number.parseInt(option.value, 10),
     label: option.label,
-    labelEn: option.labelEn,
-    labelAr: option.labelAr,
+    labelEn: option.label,
+    labelAr: option.label,
     categoryId: option.categoryId,
     plateCat: option.categoryId,
   }));
@@ -807,16 +790,6 @@ async function performHttpQuery(
 ): Promise<AnyRecord | null> {
   const apiPlateSource = resolvePlateSourceApiValue(plateSrcCode);
 
-  if (isDubaiPoliceRelayEnabled()) {
-    return await requestViaRelay<AnyRecord>("POST", "/relay/search-fines", {
-      inquiryType: 3,
-      plateNo,
-      plateCat,
-      plateSrcCode: apiPlateSource,
-      plateCodeId: resolvedPlateCodeId,
-    });
-  }
-
   const response = await axios.post(
     `${DUBAI_POLICE_API}/finespayment/searchFines`,
     {
@@ -853,33 +826,20 @@ export async function fetchPlateCodesFromApi(plateSrcCode: string, options?: { f
   try {
     let codes: AnyRecord[] = [];
 
-    if (isDubaiPoliceRelayEnabled()) {
-      const relayData = await requestViaRelay<AnyRecord>(
-        "GET",
-        `/relay/plate-data/${encodeURIComponent(resolvePlateSourceApiValue(normalizedPlateSrcCode))}`
-      );
-      codes = extractCodes(relayData);
-    }
-
-    if (!codes.length) {
-      const response = await axios.get(
-        `${DUBAI_POLICE_API}/finespayment/getPlateData/${resolvePlateSourceApiValue(normalizedPlateSrcCode)}`,
-        {
-          headers: API_GET_HEADERS,
-          timeout: 10000,
-          responseType: "text",
-          transformResponse: [(data) => data],
-          validateStatus: () => true,
-          ...getAxiosNetworkConfig(),
-        }
-      );
-
-      if (response.status < 400) {
-        codes = extractCodes(parseRawJson(response.data));
-        if (!codes.length) {
-          console.warn(`[Scraper] Axios plate-data response for ${normalizedPlateSrcCode} was not usable, trying curl fallback`);
-        }
+    const response = await axios.get(
+      `${DUBAI_POLICE_API}/finespayment/getPlateData/${resolvePlateSourceApiValue(normalizedPlateSrcCode)}`,
+      {
+        headers: API_GET_HEADERS,
+        timeout: 10000,
+        responseType: "text",
+        transformResponse: [(data) => data],
+        validateStatus: () => true,
+        ...getAxiosNetworkConfig(),
       }
+    );
+
+    if (response.status < 400) {
+      codes = extractCodes(parseRawJson(response.data));
     }
 
     if (!codes.length) {
@@ -927,27 +887,15 @@ export async function scrapeDubaiFines(
   const normalizedPlateNo = normalizeDigits(String(plateNo ?? "")).trim();
   const normalizedPlateCode = String(plateCodeId ?? "").trim();
 
-  if (isDubaiPoliceRelayEnabled()) {
-    const relayResult = await requestViaRelay<ScraperResult>("POST", "/relay/scrape", {
-      plateSource: normalizedPlateSrcCode,
-      plateNumber: normalizedPlateNo,
-      plateCode: normalizedPlateCode,
-      plateCodeId: parsePositiveInt(explicitMeta.plateCodeId) ?? null,
-      plateCategory: parsePositiveInt(explicitMeta.plateCategory) ?? null,
-    });
-
-    if (relayResult) {
-      return relayResult;
-    }
-  }
-
+  // 1. Resolve metadata first
   const apiCodes = await fetchPlateCodesFromApi(normalizedPlateSrcCode);
   const { resolvedPlateCodeId, plateCat } = resolvePlateCodeMeta(normalizedPlateSrcCode, normalizedPlateCode, apiCodes, explicitMeta);
 
   console.log(
-    `[Scraper] Querying fines: plateNo=${normalizedPlateNo} plateSrcCode=${normalizedPlateSrcCode} requestedPlateCode=${normalizedPlateCode} explicitPlateCodeId=${parsePositiveInt(explicitMeta.plateCodeId) ?? 0} explicitPlateCategory=${parsePositiveInt(explicitMeta.plateCategory) ?? 0} resolvedPlateCodeId=${resolvedPlateCodeId} plateCat=${plateCat}`
+    `[Scraper] Starting inquiry: plateNo=${normalizedPlateNo} plateSrcCode=${normalizedPlateSrcCode} code=${normalizedPlateCode} id=${resolvedPlateCodeId} cat=${plateCat}`
   );
 
+  // 2. Path A: Direct API (with optional Proxy support)
   try {
     const data = await performHttpQuery(
       normalizedPlateSrcCode,
@@ -957,28 +905,43 @@ export async function scrapeDubaiFines(
     );
 
     if (data) {
-      console.log("[Scraper] API response:", JSON.stringify(data).substring(0, 300));
+      console.log("[Scraper] Direct API success");
       return mapApiDataToScraperResult(data);
     }
-
-    console.warn("[Scraper] Direct HTTP response was not parseable JSON, switching to browser fallback");
-    return await tryPlaywrightFallback(
-      normalizedPlateSrcCode,
-      normalizedPlateNo,
-      normalizedPlateCode,
-      plateCat,
-      resolvedPlateCodeId
-    );
   } catch (err: any) {
-    console.error("[Scraper] Error:", err?.message || err);
-    return await tryPlaywrightFallback(
-      normalizedPlateSrcCode,
-      normalizedPlateNo,
-      normalizedPlateCode,
-      plateCat,
-      resolvedPlateCodeId
-    );
+    console.warn(`[Scraper] Direct API failed: ${err?.message || "unknown error"}`);
   }
+
+  // 3. Path B: Relay Fallback (if enabled)
+  if (isDubaiPoliceRelayEnabled()) {
+    try {
+      console.log("[Scraper] Attempting Relay fallback...");
+      const relayResult = await requestViaRelay<ScraperResult>("POST", "/relay/scrape", {
+        plateSource: normalizedPlateSrcCode,
+        plateNumber: normalizedPlateNo,
+        plateCode: normalizedPlateCode,
+        plateCodeId: resolvedPlateCodeId,
+        plateCategory: plateCat,
+      });
+
+      if (relayResult && relayResult.success) {
+        console.log("[Scraper] Relay fallback success");
+        return relayResult;
+      }
+    } catch (relayErr: any) {
+      console.warn(`[Scraper] Relay fallback failed: ${relayErr?.message || "unknown error"}`);
+    }
+  }
+
+  // 4. Path C: Browser Fallback (Playwright with optional Proxy)
+  console.log("[Scraper] Switching to browser fallback...");
+  return await tryPlaywrightFallback(
+    normalizedPlateSrcCode,
+    normalizedPlateNo,
+    normalizedPlateCode,
+    plateCat,
+    resolvedPlateCodeId
+  );
 }
 
 const PLAYWRIGHT_FALLBACK_CONCURRENCY = Math.max(
@@ -1076,7 +1039,7 @@ async function tryPlaywrightFallback(
       } = params;
       const normalizeDigits = (value: string) => value
         .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
-        .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+        .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵٦٧٨٩".indexOf(d)));
 
       const normalizeCompare = (value: unknown) => normalizeDigits(String(value ?? ""))
         .trim()
