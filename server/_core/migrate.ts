@@ -82,37 +82,46 @@ export async function runMigrations(): Promise<void> {
   }
 
   let connection: mysql.Connection | null = null;
-  try {
-    console.log("[Migrate] Connecting to database for migrations (with SSL)...");
-    
-    connection = await mysql.createConnection({
-      uri: databaseUrl,
-      multipleStatements: true,
-      ssl: {
-        rejectUnauthorized: false
+  let retries = 3;
+  
+  while (retries > 0) {
+    try {
+      console.log(`[Migrate] Connecting to database (Attempt ${4 - retries}/3)...`);
+      
+      connection = await mysql.createConnection({
+        uri: databaseUrl,
+        ssl: {
+          rejectUnauthorized: false
+        },
+        connectTimeout: 10000,
+      });
+
+      console.log("[Migrate] Connection established. Ensuring tables exist...");
+      
+      const statements = CREATE_TABLES_SQL
+        .split(";")
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+      
+      for (const statement of statements) {
+        await connection.query(statement);
       }
-    });
 
-    console.log("[Migrate] Connection established. Ensuring tables exist...");
-    
-    // Split statements and execute individually to avoid issues with some MySQL versions/drivers
-    const statements = CREATE_TABLES_SQL
-      .split(";")
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-    
-    for (const statement of statements) {
-      await connection.query(statement);
-    }
-
-    console.log("[Migrate] Database schema verified successfully");
-  } catch (error: any) {
-    console.error("[Migrate] Migration failure:", error.message);
-    // In production, we might want to continue even if migration fails 
-    // to allow the server to start if the schema is already correct
-  } finally {
-    if (connection) {
-      await connection.end();
+      console.log("[Migrate] Database schema verified successfully");
+      break; // Success, exit loop
+    } catch (error: any) {
+      console.error(`[Migrate] Attempt failed: ${error.message}`);
+      retries--;
+      if (retries === 0) {
+        console.error("[Migrate] All migration attempts failed.");
+      } else {
+        await new Promise(res => setTimeout(res, 2000)); // Wait before retry
+      }
+    } finally {
+      if (connection) {
+        await connection.end();
+        connection = null;
+      }
     }
   }
 }

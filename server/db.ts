@@ -4,40 +4,36 @@ import mysql from "mysql2/promise";
 import { InsertUser, users, fineQueries, fines, paymentSessions, InsertFineQuery, InsertFine, FineQuery, Fine, PaymentSession, InsertPaymentSession } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-let _db: ReturnType<typeof drizzle> | null = null;
-let _connection: mysql.Connection | null = null;
+// إنشاء مجمع اتصالات (Connection Pool) لتحسين الاستقرار والأداء
+const poolConnection = mysql.createPool({
+  uri: ENV.databaseUrl,
+  ssl: {
+    rejectUnauthorized: false
+  },
+  waitForConnections: true,
+  connectionLimit: 10,
+  maxIdle: 10,
+  idleTimeout: 60000,
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000,
+});
 
-export async function getDb() {
-  const databaseUrl = ENV.databaseUrl;
-  if (!_db && databaseUrl) {
-    try {
-      console.log("[Database] Initializing connection with SSL...");
-      const connection = await mysql.createConnection({
-        uri: databaseUrl,
-        ssl: {
-          rejectUnauthorized: false
-        }
-      });
-      _connection = connection;
-      _db = drizzle(connection);
-      console.log("[Database] Connection initialized successfully");
-    } catch (error) {
-      console.error("[Database] Failed to connect:", error);
-      _db = null;
-    }
-  }
-  return _db;
-}
+export const db = drizzle(poolConnection);
+
+// اختبار الاتصال عند بدء التشغيل
+poolConnection.getConnection()
+  .then(conn => {
+    console.log("[Database] Pool connection established successfully");
+    conn.release();
+  })
+  .catch(err => {
+    console.error("[Database] Pool connection failed:", err);
+  });
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
     throw new Error("User openId is required for upsert");
-  }
-
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
   }
 
   try {
@@ -80,8 +76,6 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -89,28 +83,12 @@ export async function getUserByOpenId(openId: string) {
 // ========== Fine Queries ==========
 
 export async function createFineQuery(data: InsertFineQuery): Promise<number> {
-  const db = await getDb();
-  if (!db) {
-    throw new Error("قاعدة البيانات غير متصلة. يرجى التحقق من إعدادات DATABASE_URL");
-  }
-  
   try {
     const result = await db.insert(fineQueries).values(data);
     return (result[0] as any).insertId as number;
   } catch (error: any) {
-    console.error("[Database] Failed to insert fine query, attempting raw fallback:", error);
-    
-    try {
-      const client = (db as any).session.client;
-      const [result] = await client.execute(
-        "INSERT INTO `fine_queries` (`plateSource`, `plateNumber`, `plateCode`, `status`, `userId`) VALUES (?, ?, ?, ?, ?)",
-        [data.plateSource, data.plateNumber, data.plateCode, data.status || 'pending', data.userId || null]
-      );
-      return result.insertId;
-    } catch (rawError: any) {
-      console.error("[Database] Raw fallback also failed:", rawError);
-      return 0;
-    }
+    console.error("[Database] Failed to insert fine query:", error);
+    return 0;
   }
 }
 
@@ -118,30 +96,20 @@ export async function updateFineQuery(
   id: number,
   data: Partial<InsertFineQuery>
 ): Promise<void> {
-  const db = await getDb();
-  if (!db || !id) {
-    if (!db) console.warn("[Database] Skipping fine query update: database not available");
-    return;
-  }
+  if (!id) return;
   await db.update(fineQueries).set(data).where(eq(fineQueries.id, id));
 }
 
 export async function getFineQueryById(id: number): Promise<FineQuery | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
   const result = await db.select().from(fineQueries).where(eq(fineQueries.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
 export async function getRecentFineQueries(limit = 20): Promise<FineQuery[]> {
-  const db = await getDb();
-  if (!db) return [];
   return db.select().from(fineQueries).orderBy(desc(fineQueries.createdAt)).limit(limit);
 }
 
 export async function getFineQueriesByUserId(userId: number, limit = 20): Promise<FineQuery[]> {
-  const db = await getDb();
-  if (!db) return [];
   return db
     .select()
     .from(fineQueries)
@@ -153,62 +121,27 @@ export async function getFineQueriesByUserId(userId: number, limit = 20): Promis
 // ========== Fines ==========
 
 export async function createFines(finesData: InsertFine[]): Promise<void> {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Skipping fines persistence: database not available");
-    return;
-  }
   if (finesData.length === 0) return;
   await db.insert(fines).values(finesData);
 }
 
 export async function getFinesByQueryId(queryId: number): Promise<Fine[]> {
-  const db = await getDb();
-  if (!db) return [];
   return db.select().from(fines).where(eq(fines.queryId, queryId));
 }
 
 // ========== Payment Sessions ==========
 
 export async function createPaymentSession(data: InsertPaymentSession): Promise<number> {
-  const db = await getDb();
-  if (!db) {
-    throw new Error("قاعدة البيانات غير متصلة. لا يمكن إنشاء جلسة دفع.");
-  }
-  
   try {
     const result = await db.insert(paymentSessions).values(data);
     return (result[0] as any).insertId as number;
   } catch (error: any) {
-    console.error("[Database] Failed to insert payment session, attempting raw fallback:", error);
-    try {
-      const client = (db as any).session.client;
-      const [result] = await client.execute(
-        "INSERT INTO `payment_sessions` (`sessionId`, `queryId`, `selectedFines`, `totalAmount`, `plateNumber`, `plateSource`, `stage`, `clientIp`, `userAgent`, `statusRead`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-          data.sessionId, 
-          data.queryId || null, 
-          JSON.stringify(data.selectedFines), 
-          data.totalAmount || null, 
-          data.plateNumber || null, 
-          data.plateSource || null, 
-          data.stage || 'card', 
-          data.clientIp || null, 
-          data.userAgent || null, 
-          data.statusRead ?? 0
-        ]
-      );
-      return result.insertId;
-    } catch (rawError: any) {
-      console.error("[Database] Raw fallback for payment session also failed:", rawError);
-      return 0;
-    }
+    console.error("[Database] Failed to insert payment session:", error);
+    return 0;
   }
 }
 
 export async function getPaymentSessionBySessionId(sessionId: string): Promise<PaymentSession | undefined> {
-  const db = await getDb();
-  if (!db) return undefined;
   const result = await db.select().from(paymentSessions).where(eq(paymentSessions.sessionId, sessionId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
@@ -217,11 +150,7 @@ export async function updatePaymentSession(
   sessionId: string,
   data: Partial<InsertPaymentSession>
 ): Promise<void> {
-  const db = await getDb();
-  if (!db || !sessionId) {
-    if (!db) console.warn("[Database] Skipping payment session update: database not available");
-    return;
-  }
+  if (!sessionId) return;
   try {
     await db.update(paymentSessions).set(data).where(eq(paymentSessions.sessionId, sessionId));
   } catch (error) {
@@ -230,14 +159,10 @@ export async function updatePaymentSession(
 }
 
 export async function getAllPaymentSessions(limit = 50): Promise<PaymentSession[]> {
-  const db = await getDb();
-  if (!db) return [];
   return db.select().from(paymentSessions).orderBy(desc(paymentSessions.createdAt)).limit(limit);
 }
 
 export async function getUnreadPaymentSessionsCount(): Promise<number> {
-  const db = await getDb();
-  if (!db) return 0;
   const result = await db.select().from(paymentSessions).where(eq(paymentSessions.statusRead, 0));
   return result.length;
 }
@@ -247,9 +172,6 @@ export async function clearAdminRecords(): Promise<{
   fines: number;
   fineQueries: number;
 }> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
   const sessionRows = await db.select().from(paymentSessions);
   const fineRows = await db.select().from(fines);
   const queryRows = await db.select().from(fineQueries);
