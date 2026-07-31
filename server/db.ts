@@ -12,10 +12,7 @@ const parseDbUrl = (url: string) => {
     port: parseInt(parsed.port),
     user: parsed.username,
     password: decodeURIComponent(parsed.password),
-    database: parsed.pathname.substring(1),
-    ssl: {
-      rejectUnauthorized: false
-    }
+    database: parsed.pathname.substring(1)
   };
 };
 
