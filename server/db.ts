@@ -5,19 +5,7 @@ import { InsertUser, users, fineQueries, fines, paymentSessions, InsertFineQuery
 import { ENV } from './_core/env';
 
 // إنشاء مجمع اتصالات (Connection Pool) لتحسين الاستقرار والأداء
-const poolConnection = mysql.createPool({
-  uri: ENV.databaseUrl,
-  ssl: {
-    rejectUnauthorized: false
-  },
-  waitForConnections: true,
-  connectionLimit: 5,
-  maxIdle: 5,
-  idleTimeout: 30000,
-  queueLimit: 0,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 10000,
-});
+const poolConnection = mysql.createPool(ENV.databaseUrl);
 
 export const db = drizzle(poolConnection);
 export const getDb = async () => db;

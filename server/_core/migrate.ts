@@ -88,13 +88,7 @@ export async function runMigrations(): Promise<void> {
     try {
       console.log(`[Migrate] Connecting to database (Attempt ${4 - retries}/3)...`);
       
-      connection = await mysql.createConnection({
-        uri: databaseUrl,
-        ssl: {
-          rejectUnauthorized: false
-        },
-        connectTimeout: 10000,
-      });
+      connection = await mysql.createConnection(databaseUrl);
 
       console.log("[Migrate] Connection established. Ensuring tables exist...");
       
