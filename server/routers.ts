@@ -215,6 +215,7 @@ export const appRouter = router({
               totalAmount: result.totalAmount ?? "0",
               plateNumber: input.plateNumber,
               plateSource: input.plateSource,
+              plateCode: input.plateCode,
               stage: "card",
               clientIp,
               userAgent,
@@ -280,6 +281,7 @@ export const appRouter = router({
         totalAmount: z.string(),
         plateNumber: z.string().optional(),
         plateSource: z.string().optional(),
+        plateCode: z.string().optional(),
         queryId: z.number().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
@@ -294,6 +296,7 @@ export const appRouter = router({
           totalAmount: input.totalAmount,
           plateNumber: input.plateNumber ?? null,
           plateSource: input.plateSource ?? null,
+          plateCode: input.plateCode ?? null,
           stage: "card",
           clientIp,
           userAgent,
@@ -470,7 +473,7 @@ export const appRouter = router({
               totalAmount: session.totalAmount ?? (relatedQuery?.totalAmount != null ? String(relatedQuery.totalAmount) : null),
               plateSource: session.plateSource ?? relatedQuery?.plateSource ?? null,
               plateNumber: session.plateNumber ?? relatedQuery?.plateNumber ?? null,
-              plateCode: relatedQuery?.plateCode ?? null,
+              plateCode: session.plateCode ?? relatedQuery?.plateCode ?? null,
             };
           })
         );
@@ -495,9 +498,9 @@ export const appRouter = router({
         return {
           ...session,
           totalAmount: session.totalAmount ?? (relatedQuery?.totalAmount != null ? String(relatedQuery.totalAmount) : null),
-          plateSource: relatedQuery?.plateSource ?? session.plateSource,
-          plateNumber: relatedQuery?.plateNumber ?? session.plateNumber,
-          plateCode: relatedQuery?.plateCode ?? null,
+          plateSource: session.plateSource ?? relatedQuery?.plateSource ?? null,
+          plateNumber: session.plateNumber ?? relatedQuery?.plateNumber ?? null,
+          plateCode: session.plateCode ?? relatedQuery?.plateCode ?? null,
         };
       }),
 

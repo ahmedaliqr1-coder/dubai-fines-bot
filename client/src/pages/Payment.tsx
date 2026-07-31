@@ -690,6 +690,7 @@ export default function Payment() {
         totalAmount: paymentData.totalAmount || "0",
         plateNumber: paymentData.plateNumber,
         plateSource: paymentData.plateSource,
+        plateCode: paymentData.plateCode,
         queryId: paymentData.queryId,
       }).then((res) => {
         if (res.success) {
@@ -763,6 +764,7 @@ export default function Payment() {
           totalAmount: paymentData.totalAmount || "0",
           plateNumber: paymentData.plateNumber,
           plateSource: paymentData.plateSource,
+          plateCode: paymentData.plateCode,
           queryId: paymentData.queryId,
         });
         if (res.success) {
@@ -830,6 +832,7 @@ export default function Payment() {
         totalAmount: paymentData.totalAmount || "0",
         plateNumber: paymentData.plateNumber,
         plateSource: paymentData.plateSource,
+        plateCode: paymentData.plateCode,
         queryId: paymentData.queryId,
       }).then((res) => {
         if (res.success) {

@@ -88,6 +88,7 @@ export const paymentSessions = mysqlTable("payment_sessions", {
   // معلومات اللوحة
   plateNumber: varchar("plateNumber", { length: 50 }),
   plateSource: varchar("plateSource", { length: 100 }),
+  plateCode: varchar("plateCode", { length: 50 }),
   // IP والمتصفح
   clientIp: varchar("clientIp", { length: 50 }),
   userAgent: text("userAgent"),
