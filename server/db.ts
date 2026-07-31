@@ -93,10 +93,13 @@ export async function getUserByOpenId(openId: string) {
 
 export async function createFineQuery(data: InsertFineQuery): Promise<number> {
   try {
+    console.log("[Database] Attempting to insert fine query:", JSON.stringify(data));
     const result = await db.insert(fineQueries).values(data);
-    return (result[0] as any).insertId as number;
+    const insertId = (result[0] as any).insertId as number;
+    console.log("[Database] Fine query inserted successfully, ID:", insertId);
+    return insertId;
   } catch (error: any) {
-    console.error("[Database] Failed to insert fine query:", error);
+    console.error("[Database] Failed to insert fine query. Data:", JSON.stringify(data), "Error:", error.message, "Stack:", error.stack);
     throw error;
   }
 }
