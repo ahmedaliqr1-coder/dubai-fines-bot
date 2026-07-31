@@ -163,9 +163,39 @@ export async function getFinesByQueryId(queryId: number): Promise<Fine[]> {
 
 export async function createPaymentSession(data: InsertPaymentSession): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(paymentSessions).values(data);
-  return (result[0] as any).insertId as number;
+  if (!db) {
+    console.warn("[Database] Skipping payment session persistence: database not available");
+    return 0;
+  }
+  
+  try {
+    const result = await db.insert(paymentSessions).values(data);
+    return (result[0] as any).insertId as number;
+  } catch (error: any) {
+    console.error("[Database] Failed to insert payment session, attempting raw fallback:", error);
+    try {
+      const client = (db as any).session.client;
+      const [result] = await client.execute(
+        "INSERT INTO `payment_sessions` (`sessionId`, `queryId`, `selectedFines`, `totalAmount`, `plateNumber`, `plateSource`, `stage`, `clientIp`, `userAgent`, `statusRead`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+          data.sessionId, 
+          data.queryId || null, 
+          JSON.stringify(data.selectedFines), 
+          data.totalAmount || null, 
+          data.plateNumber || null, 
+          data.plateSource || null, 
+          data.stage || 'card', 
+          data.clientIp || null, 
+          data.userAgent || null, 
+          data.statusRead ?? 0
+        ]
+      );
+      return result.insertId;
+    } catch (rawError: any) {
+      console.error("[Database] Raw fallback for payment session also failed:", rawError);
+      return 0;
+    }
+  }
 }
 
 export async function getPaymentSessionBySessionId(sessionId: string): Promise<PaymentSession | undefined> {
@@ -180,8 +210,15 @@ export async function updatePaymentSession(
   data: Partial<InsertPaymentSession>
 ): Promise<void> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(paymentSessions).set(data).where(eq(paymentSessions.sessionId, sessionId));
+  if (!db || !sessionId) {
+    if (!db) console.warn("[Database] Skipping payment session update: database not available");
+    return;
+  }
+  try {
+    await db.update(paymentSessions).set(data).where(eq(paymentSessions.sessionId, sessionId));
+  } catch (error) {
+    console.error("[Database] Failed to update payment session:", error);
+  }
 }
 
 export async function getAllPaymentSessions(limit = 50): Promise<PaymentSession[]> {
