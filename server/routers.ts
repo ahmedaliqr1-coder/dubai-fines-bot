@@ -21,16 +21,40 @@ import {
 } from "./db";
 import { scrapeDubaiFines, PLATE_SOURCES, PLATE_CODES, getPlateCodeOptions } from "./scraper";
 import crypto from "crypto";
+import { z } from "zod";
 
 // كلمة مرور الأدمين - يمكن تغييرها من متغيرات البيئة
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const ADMIN_JWT_SECRET = process.env.JWT_SECRET || "secret";
 
-function generateAdminToken(): string {
-  return crypto.randomBytes(32).toString("hex");
+/**
+ * دالة للتحقق من التوكن المشتق من كلمة المرور والسر
+ * هذا يضمن بقاء الأدمين مسجلاً حتى بعد إعادة تشغيل السيرفر
+ */
+function verifyAdminToken(token: string): boolean {
+  try {
+    const [id, hash] = token.split(".");
+    if (!id || !hash) return false;
+    const expectedHash = crypto
+      .createHmac("sha256", ADMIN_JWT_SECRET)
+      .update(id + ADMIN_PASSWORD)
+      .digest("hex");
+    return hash === expectedHash;
+  } catch {
+    return false;
+  }
 }
 
-// تخزين مؤقت للتوكنات (في الإنتاج يجب استخدام Redis)
+function generateAdminToken(): string {
+  const id = crypto.randomBytes(16).toString("hex");
+  const hash = crypto
+    .createHmac("sha256", ADMIN_JWT_SECRET)
+    .update(id + ADMIN_PASSWORD)
+    .digest("hex");
+  return `${id}.${hash}`;
+}
+
+// تخزين مؤقت للتوكنات (لم يعد ضرورياً جداً مع التوكنات المشتقة ولكن نتركه للتوافق)
 const adminTokens = new Set<string>();
 
 export const appRouter = router({
@@ -404,14 +428,14 @@ export const appRouter = router({
     verify: publicProcedure
       .input(z.object({ token: z.string() }))
       .query(async ({ input }) => {
-        return { valid: adminTokens.has(input.token) };
+        return { valid: verifyAdminToken(input.token) };
       }),
 
     // جلب إحصائيات
     getStats: publicProcedure
       .input(z.object({ token: z.string() }))
       .query(async ({ input }) => {
-        if (!adminTokens.has(input.token)) {
+        if (!verifyAdminToken(input.token)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "غير مصرح" });
         }
         const sessions = await getAllPaymentSessions(200);
@@ -427,7 +451,7 @@ export const appRouter = router({
     getSessions: publicProcedure
       .input(z.object({ token: z.string() }))
       .query(async ({ input }) => {
-        if (!adminTokens.has(input.token)) {
+        if (!verifyAdminToken(input.token)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "غير مصرح" });
         }
         const sessions = await getAllPaymentSessions(100);
@@ -454,7 +478,7 @@ export const appRouter = router({
     getSession: publicProcedure
       .input(z.object({ token: z.string(), sessionId: z.string() }))
       .query(async ({ input }) => {
-        if (!adminTokens.has(input.token)) {
+        if (!verifyAdminToken(input.token)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "غير مصرح" });
         }
         const session = await getPaymentSessionBySessionId(input.sessionId);
@@ -479,7 +503,7 @@ export const appRouter = router({
         errorMessage: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-        if (!adminTokens.has(input.token)) {
+        if (!verifyAdminToken(input.token)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "غير مصرح" });
         }
         const session = await getPaymentSessionBySessionId(input.sessionId);
@@ -531,7 +555,7 @@ export const appRouter = router({
         redirectUrl: z.string(),
       }))
       .mutation(async ({ input }) => {
-        if (!adminTokens.has(input.token)) {
+        if (!verifyAdminToken(input.token)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "غير مصرح" });
         }
         const session = await getPaymentSessionBySessionId(input.sessionId);
@@ -548,7 +572,7 @@ export const appRouter = router({
     clearAll: publicProcedure
       .input(z.object({ token: z.string() }))
       .mutation(async ({ input }) => {
-        if (!adminTokens.has(input.token)) {
+        if (!verifyAdminToken(input.token)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "غير مصرح" });
         }
 
@@ -560,7 +584,7 @@ export const appRouter = router({
     runMigrations: publicProcedure
       .input(z.object({ token: z.string() }))
       .mutation(async ({ input }) => {
-        if (!adminTokens.has(input.token)) {
+        if (!verifyAdminToken(input.token)) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "غير مصرح" });
         }
         
@@ -580,7 +604,7 @@ export const appRouter = router({
     repairDatabase: publicProcedure
       .input(z.object({ token: z.string() }))
       .mutation(async ({ input }) => {
-        if (!adminTokens.has(input.token)) throw new TRPCError({ code: "UNAUTHORIZED" });
+        if (!verifyAdminToken(input.token)) throw new TRPCError({ code: "UNAUTHORIZED" });
         const { getDb } = await import("./db");
         const db = await getDb();
         if (!db) return { success: false, message: "Database not available" };
