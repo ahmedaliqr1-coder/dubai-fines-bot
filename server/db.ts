@@ -83,8 +83,26 @@ export async function createFineQuery(data: InsertFineQuery): Promise<number> {
     console.warn("[Database] Skipping fine query persistence: database not available");
     return 0;
   }
-  const result = await db.insert(fineQueries).values(data);
-  return (result[0] as any).insertId as number;
+  
+  try {
+    const result = await db.insert(fineQueries).values(data);
+    return (result[0] as any).insertId as number;
+  } catch (error: any) {
+    console.error("[Database] Failed to insert fine query, attempting raw fallback:", error);
+    
+    // محاولة الإدخال باستخدام SQL خام لتجاوز مشاكل Drizzle إذا استمرت
+    try {
+      const client = (db as any).session.client;
+      const [result] = await client.execute(
+        "INSERT INTO `fine_queries` (`plateSource`, `plateNumber`, `plateCode`, `status`, `userId`) VALUES (?, ?, ?, ?, ?)",
+        [data.plateSource, data.plateNumber, data.plateCode, data.status || 'pending', data.userId || null]
+      );
+      return result.insertId;
+    } catch (rawError: any) {
+      console.error("[Database] Raw fallback also failed:", rawError);
+      throw rawError;
+    }
+  }
 }
 
 export async function updateFineQuery(

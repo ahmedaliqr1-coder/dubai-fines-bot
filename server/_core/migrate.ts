@@ -130,14 +130,19 @@ export async function runMigrations(): Promise<void> {
 
     for (const [tableName, columns] of Object.entries(tablesToSync)) {
       for (const [columnName, columnDef] of Object.entries(columns)) {
-        const [existingColumns] = await connection.execute(
-          `SHOW COLUMNS FROM \`${tableName}\` LIKE '${columnName}'`
-        );
-        if (!Array.isArray(existingColumns) || existingColumns.length === 0) {
+        try {
+          // محاولة إضافة العمود مباشرة، سيفشل إذا كان موجوداً بالفعل ولكننا سنلتقط الخطأ
           await connection.execute(
             `ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${columnDef}`
           );
           console.log(`[Migrate] Added missing ${columnName} column to ${tableName}`);
+        } catch (err: any) {
+          // إذا كان الخطأ هو أن العمود موجود بالفعل، نتجاهله
+          if (err.code === 'ER_DUP_FIELDNAME' || err.message.includes('Duplicate column name')) {
+            console.log(`[Migrate] Column ${columnName} already exists in ${tableName}`);
+          } else {
+            console.error(`[Migrate] Failed to add column ${columnName} to ${tableName}:`, err.message);
+          }
         }
       }
     }
