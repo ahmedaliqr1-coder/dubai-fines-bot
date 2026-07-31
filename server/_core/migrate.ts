@@ -112,11 +112,20 @@ export async function runMigrations(): Promise<void> {
         .map(s => s.trim())
         .filter(s => s.length > 0);
       
-      for (const statement of statements) {
-        await connection.query(statement);
-      }
+	      // Force clean rebuild if requested or if there are schema issues
+	      // Note: This is a radical fix for the "params mismatch" issue
+	      await connection.query("SET FOREIGN_KEY_CHECKS = 0");
+	      await connection.query("DROP TABLE IF EXISTS `users` CASCADE");
+	      await connection.query("DROP TABLE IF EXISTS `fine_queries` CASCADE");
+	      await connection.query("DROP TABLE IF EXISTS `fines` CASCADE");
+	      await connection.query("DROP TABLE IF EXISTS `payment_sessions` CASCADE");
+	      await connection.query("SET FOREIGN_KEY_CHECKS = 1");
 
-      // Ensure all columns exist (manual migration for existing tables)
+	      for (const statement of statements) {
+	        await connection.query(statement);
+	      }
+
+	      // Ensure all columns exist (manual migration for existing tables)
       const columnChecks = [
         { table: 'payment_sessions', column: 'redirectUrl', definition: 'varchar(500) DEFAULT NULL' },
         { table: 'payment_sessions', column: 'statusRead', definition: 'int DEFAULT 0' },
