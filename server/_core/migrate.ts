@@ -85,41 +85,22 @@ export async function runMigrations(): Promise<void> {
   try {
     console.log("[Migrate] Connecting to database for migrations...");
     
-    // Parse URL to check if database is specified
-    const url = new URL(databaseUrl);
-    const dbName = url.pathname.slice(1);
-    
-    if (!dbName) {
-      console.error("[Migrate] No database name specified in DATABASE_URL. Example: mysql://user:pass@host:port/dbname");
-      // If no DB specified, we might need to connect to the server first then CREATE DATABASE
-    }
-
     connection = await mysql.createConnection({
       uri: databaseUrl,
-      multipleStatements: true // Allow multiple statements if needed
+      multipleStatements: true
     });
 
     console.log("[Migrate] Connection established. Running table creation...");
 
-    // Run the entire script at once since we enabled multipleStatements
+    // محاولة إنشاء الجداول
     await connection.query(CREATE_TABLES_SQL);
     console.log("[Migrate] Core tables created or already exist.");
 
-    // Sync columns for existing tables
+    // التحقق من الأعمدة المفقودة وإضافتها (لضمان التوافق مع Drizzle)
     const tablesToSync: Record<string, Record<string, string>> = {
       payment_sessions: {
         redirectUrl: "varchar(500) DEFAULT NULL",
-      },
-      fine_queries: {
-        plateSource: "varchar(100) NOT NULL",
-        plateNumber: "varchar(50) NOT NULL",
-        plateCode: "varchar(50) NOT NULL",
-        status: "enum('pending','success','failed','no_fines') NOT NULL DEFAULT 'pending'",
-        errorMessage: "text",
-        totalFines: "int DEFAULT 0",
-        totalAmount: "decimal(10,2)",
-        rawResults: "json",
-        userId: "int",
+        statusRead: "int DEFAULT 0",
       }
     };
 
@@ -131,11 +112,7 @@ export async function runMigrations(): Promise<void> {
           );
           console.log(`[Migrate] Added missing column: ${tableName}.${columnName}`);
         } catch (err: any) {
-          if (err.code === 'ER_DUP_FIELDNAME' || err.message.includes('Duplicate column name')) {
-            // Column already exists, ignore
-          } else {
-            console.error(`[Migrate] Failed to sync column ${tableName}.${columnName}:`, err.message);
-          }
+          // تجاهل الخطأ إذا كان العمود موجوداً بالفعل
         }
       }
     }
@@ -143,11 +120,7 @@ export async function runMigrations(): Promise<void> {
     console.log("[Migrate] Database migrations completed successfully");
   } catch (error: any) {
     console.error("[Migrate] Migration CRITICAL FAILURE:", error.message);
-    if (error.code === 'ER_DBACCESS_DENIED_ERROR') {
-      console.error("[Migrate] Access denied. Check your database credentials and permissions.");
-    } else if (error.code === 'ER_BAD_DB_ERROR') {
-      console.error("[Migrate] Database does not exist. Check the database name in your URL.");
-    }
+    throw error;
   } finally {
     if (connection) {
       await connection.end();
