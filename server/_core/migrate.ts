@@ -107,6 +107,25 @@ export async function runMigrations(): Promise<void> {
         await connection.query(statement);
       }
 
+      // Ensure all columns exist (manual migration for existing tables)
+      const columnChecks = [
+        { table: 'payment_sessions', column: 'redirectUrl', definition: 'varchar(500) DEFAULT NULL' },
+        { table: 'payment_sessions', column: 'statusRead', definition: 'int DEFAULT 0' },
+        { table: 'fine_queries', column: 'rawResults', definition: 'json' },
+      ];
+
+      for (const check of columnChecks) {
+        try {
+          await connection.query(`ALTER TABLE \`${check.table}\` ADD COLUMN \`${check.column}\` ${check.definition}`);
+          console.log(`[Migrate] Added missing column ${check.column} to ${check.table}`);
+        } catch (err: any) {
+          // ER_DUP_FIELDNAME: Column already exists
+          if (err.errno !== 1060 && err.code !== 'ER_DUP_FIELDNAME') {
+            console.warn(`[Migrate] Note: Column ${check.column} in ${check.table} was not added: ${err.message}`);
+          }
+        }
+      }
+
       console.log("[Migrate] Database schema verified successfully");
       break; // Success, exit loop
     } catch (error: any) {
