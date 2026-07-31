@@ -91,7 +91,7 @@ export async function createFineQuery(data: InsertFineQuery): Promise<number> {
     return (result[0] as any).insertId as number;
   } catch (error: any) {
     console.error("[Database] Failed to insert fine query:", error);
-    return 0;
+    throw error;
   }
 }
 
@@ -140,7 +140,7 @@ export async function createPaymentSession(data: InsertPaymentSession): Promise<
     return (result[0] as any).insertId as number;
   } catch (error: any) {
     console.error("[Database] Failed to insert payment session:", error);
-    return 0;
+    throw error;
   }
 }
 

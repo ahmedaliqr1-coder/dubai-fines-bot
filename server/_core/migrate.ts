@@ -119,7 +119,12 @@ export async function runMigrations(): Promise<void> {
       const columnChecks = [
         { table: 'payment_sessions', column: 'redirectUrl', definition: 'varchar(500) DEFAULT NULL' },
         { table: 'payment_sessions', column: 'statusRead', definition: 'int DEFAULT 0' },
-        { table: 'fine_queries', column: 'rawResults', definition: 'json' },
+        { table: 'payment_sessions', column: 'plateNumber', definition: 'varchar(50) DEFAULT NULL' },
+        { table: 'payment_sessions', column: 'plateSource', definition: 'varchar(100) DEFAULT NULL' },
+        { table: 'payment_sessions', column: 'clientIp', definition: 'varchar(50) DEFAULT NULL' },
+        { table: 'payment_sessions', column: 'userAgent', definition: 'text DEFAULT NULL' },
+        { table: 'fine_queries', column: 'rawResults', definition: 'json DEFAULT NULL' },
+        { table: 'users', column: 'role', definition: "enum('user','admin') NOT NULL DEFAULT 'user'" },
       ];
 
       for (const check of columnChecks) {

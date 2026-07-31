@@ -206,6 +206,7 @@ export const appRouter = router({
               : ctx.req.socket.remoteAddress || "";
           const userAgent = ctx.req.headers["user-agent"] || "";
 
+          let sessionCreated = false;
           try {
             await createPaymentSession({
               sessionId,
@@ -219,15 +220,15 @@ export const appRouter = router({
               userAgent,
               statusRead: 0,
             });
+            sessionCreated = true;
           } catch (dbError) {
             console.error("[Database] Failed to create payment session:", dbError);
-            // We still proceed even if logging the session fails
           }
 
           return {
             success: true,
             queryId,
-            sessionId,
+            sessionId: sessionCreated ? sessionId : undefined,
             fines: mappedFines,
             totalAmount: result.totalAmount,
             totalFines: finesCount,
@@ -457,12 +458,18 @@ export const appRouter = router({
         const sessions = await getAllPaymentSessions(100);
         const sessionsWithQueryData = await Promise.all(
           sessions.map(async (session) => {
-            const relatedQuery = session.queryId ? await getFineQueryById(session.queryId) : undefined;
+            let relatedQuery = undefined;
+            try {
+              relatedQuery = session.queryId ? await getFineQueryById(session.queryId) : undefined;
+            } catch (err) {
+              console.error(`[Admin] Failed to fetch related query for session ${session.sessionId}:`, err);
+            }
+            
             return {
               ...session,
               totalAmount: session.totalAmount ?? (relatedQuery?.totalAmount != null ? String(relatedQuery.totalAmount) : null),
-              plateSource: relatedQuery?.plateSource ?? session.plateSource,
-              plateNumber: relatedQuery?.plateNumber ?? session.plateNumber,
+              plateSource: session.plateSource ?? relatedQuery?.plateSource ?? null,
+              plateNumber: session.plateNumber ?? relatedQuery?.plateNumber ?? null,
               plateCode: relatedQuery?.plateCode ?? null,
             };
           })
