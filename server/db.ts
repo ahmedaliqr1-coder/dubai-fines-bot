@@ -4,21 +4,22 @@ import mysql from "mysql2/promise";
 import { InsertUser, users, fineQueries, fines, paymentSessions, InsertFineQuery, InsertFine, FineQuery, Fine, PaymentSession, InsertPaymentSession } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-// إنشاء مجمع اتصالات (Connection Pool) لتحسين الاستقرار والأداء
-const poolConnection = mysql.createPool(ENV.databaseUrl);
+// استخدام اتصال فردي بدلاً من مجمع الاتصالات لتجنب مشاكل البروكسي
+let connection: mysql.Connection | null = null;
 
-export const db = drizzle(poolConnection);
-export const getDb = async () => db;
+export const getDb = async () => {
+  if (!connection) {
+    connection = await mysql.createConnection(ENV.databaseUrl);
+  }
+  return drizzle(connection);
+};
+
+export const db = await getDb();
 
 // اختبار الاتصال عند بدء التشغيل
-poolConnection.getConnection()
-  .then(conn => {
-    console.log("[Database] Pool connection established successfully");
-    conn.release();
-  })
-  .catch(err => {
-    console.error("[Database] Pool connection failed:", err);
-  });
+if (connection) {
+  console.log("[Database] Connection established successfully");
+}
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
