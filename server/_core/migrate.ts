@@ -98,12 +98,35 @@ export async function runMigrations(): Promise<void> {
     }
 
     // Backfill newer columns on existing deployments safely, including engines that do not support IF NOT EXISTS on ADD COLUMN
-    const [redirectUrlColumns] = await connection.execute(`SHOW COLUMNS FROM \`payment_sessions\` LIKE 'redirectUrl'`);
-    if (!Array.isArray(redirectUrlColumns) || redirectUrlColumns.length === 0) {
-      await connection.execute(`ALTER TABLE \`payment_sessions\` ADD COLUMN \`redirectUrl\` varchar(500) DEFAULT NULL`);
-      console.log("[Migrate] Added missing redirectUrl column to payment_sessions");
-    } else {
-      console.log("[Migrate] redirectUrl column already exists on payment_sessions");
+    const tablesToSync: Record<string, Record<string, string>> = {
+      payment_sessions: {
+        redirectUrl: "varchar(500) DEFAULT NULL",
+      },
+      fine_queries: {
+        plateSource: "varchar(100) NOT NULL",
+        plateNumber: "varchar(50) NOT NULL",
+        plateCode: "varchar(50) NOT NULL",
+        status: "enum('pending','success','failed','no_fines') NOT NULL DEFAULT 'pending'",
+        errorMessage: "text",
+        totalFines: "int DEFAULT 0",
+        totalAmount: "decimal(10,2)",
+        rawResults: "json",
+        userId: "int",
+      },
+    };
+
+    for (const [tableName, columns] of Object.entries(tablesToSync)) {
+      for (const [columnName, columnDef] of Object.entries(columns)) {
+        const [existingColumns] = await connection.execute(
+          `SHOW COLUMNS FROM \`${tableName}\` LIKE '${columnName}'`
+        );
+        if (!Array.isArray(existingColumns) || existingColumns.length === 0) {
+          await connection.execute(
+            `ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${columnDef}`
+          );
+          console.log(`[Migrate] Added missing ${columnName} column to ${tableName}`);
+        }
+      }
     }
 
     console.log("[Migrate] Database migrations completed successfully");
