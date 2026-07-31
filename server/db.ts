@@ -100,7 +100,7 @@ export async function createFineQuery(data: InsertFineQuery): Promise<number> {
       return result.insertId;
     } catch (rawError: any) {
       console.error("[Database] Raw fallback also failed:", rawError);
-      throw rawError;
+      return 0; // Return 0 to indicate DB failure but allow process to continue
     }
   }
 }

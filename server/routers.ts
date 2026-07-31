@@ -111,10 +111,12 @@ export const appRouter = router({
           );
 
           if (!result.success) {
-            await updateFineQuery(queryId, {
-              status: "failed",
-              errorMessage: result.errorMessage,
-            });
+            if (queryId) {
+              await updateFineQuery(queryId, {
+                status: "failed",
+                errorMessage: result.errorMessage,
+              });
+            }
 
             return {
               success: false,
@@ -127,26 +129,28 @@ export const appRouter = router({
           const finesCount = result.fines.length;
           const status = finesCount === 0 ? "no_fines" : "success";
 
-          await updateFineQuery(queryId, {
-            status,
-            totalFines: finesCount,
-            totalAmount: result.totalAmount ?? "0",
-            rawResults: result.fines as any,
-          });
+          if (queryId) {
+            await updateFineQuery(queryId, {
+              status,
+              totalFines: finesCount,
+              totalAmount: result.totalAmount ?? "0",
+              rawResults: result.fines as any,
+            });
 
-          if (finesCount > 0) {
-            await createFines(
-              result.fines.map((fine) => ({
-                queryId,
-                fineNumber: fine.fineNumber,
-                fineDate: fine.fineDate,
-                description: fine.description,
-                amount: fine.amount ? fine.amount.replace(/[^0-9.]/g, "") : undefined,
-                blackPoints: fine.blackPoints ?? 0,
-                isPaid: fine.isPaid ?? "unpaid",
-                location: fine.location,
-              }))
-            );
+            if (finesCount > 0) {
+              await createFines(
+                result.fines.map((fine) => ({
+                  queryId,
+                  fineNumber: fine.fineNumber,
+                  fineDate: fine.fineDate,
+                  description: fine.description,
+                  amount: fine.amount ? fine.amount.replace(/[^0-9.]/g, "") : undefined,
+                  blackPoints: fine.blackPoints ?? 0,
+                  isPaid: fine.isPaid ?? "unpaid",
+                  location: fine.location,
+                }))
+              );
+            }
           }
 
           const isArabic = input.lang === "ar";
@@ -178,18 +182,23 @@ export const appRouter = router({
               : ctx.req.socket.remoteAddress || "";
           const userAgent = ctx.req.headers["user-agent"] || "";
 
-          await createPaymentSession({
-            sessionId,
-            queryId: queryId || null,
-            selectedFines: mappedFines as any,
-            totalAmount: result.totalAmount ?? "0",
-            plateNumber: input.plateNumber,
-            plateSource: input.plateSource,
-            stage: "card",
-            clientIp,
-            userAgent,
-            statusRead: 0,
-          });
+          try {
+            await createPaymentSession({
+              sessionId,
+              queryId: queryId || null,
+              selectedFines: mappedFines as any,
+              totalAmount: result.totalAmount ?? "0",
+              plateNumber: input.plateNumber,
+              plateSource: input.plateSource,
+              stage: "card",
+              clientIp,
+              userAgent,
+              statusRead: 0,
+            });
+          } catch (dbError) {
+            console.error("[Database] Failed to create payment session:", dbError);
+            // We still proceed even if logging the session fails
+          }
 
           return {
             success: true,
@@ -200,10 +209,12 @@ export const appRouter = router({
             totalFines: finesCount,
           };
         } catch (error) {
-          await updateFineQuery(queryId, {
-            status: "failed",
-            errorMessage: error instanceof Error ? error.message : "خطأ غير متوقع",
-          });
+          if (queryId) {
+            await updateFineQuery(queryId, {
+              status: "failed",
+              errorMessage: error instanceof Error ? error.message : "خطأ غير متوقع",
+            });
+          }
 
           return {
             success: false,
