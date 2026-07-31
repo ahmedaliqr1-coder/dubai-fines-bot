@@ -7,7 +7,7 @@ import { ENV } from './_core/env';
 // استخدام مجمع اتصالات مع تحليل يدوي للـ URI لضمان التوافق
 const parseDbUrl = (url: string) => {
   const parsed = new URL(url);
-  return {
+  const options: any = {
     host: parsed.hostname,
     port: parseInt(parsed.port),
     user: parsed.username,
@@ -15,8 +15,14 @@ const parseDbUrl = (url: string) => {
     database: parsed.pathname.substring(1),
     ssl: {
       rejectUnauthorized: false
-    }
+    },
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000
   };
+  return options;
 };
 
 const poolConnection = mysql.createPool(parseDbUrl(ENV.databaseUrl));
