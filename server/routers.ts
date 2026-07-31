@@ -544,6 +544,28 @@ export const appRouter = router({
         const deleted = await clearAdminRecords();
         return { success: true, deleted };
       }),
+
+    // إجراء تشخيصي لفحص هيكل الجداول
+    debugSchema: publicProcedure
+      .query(async () => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) return { error: "Database not available" };
+
+        try {
+          const [fineQueriesCols] = await (db as any).session.client.execute("SHOW COLUMNS FROM `fine_queries`").catch(() => [[]]);
+          const [finesCols] = await (db as any).session.client.execute("SHOW COLUMNS FROM `fines`").catch(() => [[]]);
+          const [paymentSessionsCols] = await (db as any).session.client.execute("SHOW COLUMNS FROM `payment_sessions`").catch(() => [[]]);
+
+          return {
+            fine_queries: fineQueriesCols,
+            fines: finesCols,
+            payment_sessions: paymentSessionsCols,
+          };
+        } catch (err: any) {
+          return { error: err.message };
+        }
+      }),
   }),
 });
 
