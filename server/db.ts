@@ -4,22 +4,35 @@ import mysql from "mysql2/promise";
 import { InsertUser, users, fineQueries, fines, paymentSessions, InsertFineQuery, InsertFine, FineQuery, Fine, PaymentSession, InsertPaymentSession } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-// استخدام اتصال فردي بدلاً من مجمع الاتصالات لتجنب مشاكل البروكسي
-let connection: mysql.Connection | null = null;
-
-export const getDb = async () => {
-  if (!connection) {
-    connection = await mysql.createConnection(ENV.databaseUrl);
-  }
-  return drizzle(connection);
+// استخدام مجمع اتصالات مع تحليل يدوي للـ URI لضمان التوافق
+const parseDbUrl = (url: string) => {
+  const parsed = new URL(url);
+  return {
+    host: parsed.hostname,
+    port: parseInt(parsed.port),
+    user: parsed.username,
+    password: decodeURIComponent(parsed.password),
+    database: parsed.pathname.substring(1),
+    ssl: {
+      rejectUnauthorized: false
+    }
+  };
 };
 
-export const db = await getDb();
+const poolConnection = mysql.createPool(parseDbUrl(ENV.databaseUrl));
+
+export const db = drizzle(poolConnection);
+export const getDb = async () => db;
 
 // اختبار الاتصال عند بدء التشغيل
-if (connection) {
-  console.log("[Database] Connection established successfully");
-}
+poolConnection.getConnection()
+  .then(conn => {
+    console.log("[Database] Connection established successfully");
+    conn.release();
+  })
+  .catch(err => {
+    console.error("[Database] Connection failed:", err.message);
+  });
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {

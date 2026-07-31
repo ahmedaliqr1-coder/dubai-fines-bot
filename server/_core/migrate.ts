@@ -74,6 +74,20 @@ CREATE TABLE IF NOT EXISTS \`payment_sessions\` (
 );
 `;
 
+const parseDbUrl = (url: string) => {
+  const parsed = new URL(url);
+  return {
+    host: parsed.hostname,
+    port: parseInt(parsed.port),
+    user: parsed.username,
+    password: decodeURIComponent(parsed.password),
+    database: parsed.pathname.substring(1),
+    ssl: {
+      rejectUnauthorized: false
+    }
+  };
+};
+
 export async function runMigrations(): Promise<void> {
   const databaseUrl = ENV.databaseUrl;
   if (!databaseUrl) {
@@ -88,7 +102,7 @@ export async function runMigrations(): Promise<void> {
     try {
       console.log(`[Migrate] Connecting to database (Attempt ${4 - retries}/3)...`);
       
-      connection = await mysql.createConnection(databaseUrl);
+      connection = await mysql.createConnection(parseDbUrl(databaseUrl));
 
       console.log("[Migrate] Connection established. Ensuring tables exist...");
       
